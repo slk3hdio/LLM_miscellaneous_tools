@@ -1,4 +1,4 @@
-# Paper
+# LLM_miscellaneous_tools
 
 Utilities for inspecting local language-model weights, visualizing model internals with Streamlit, and evaluating tool-use datasets such as API-Bank and ToolACE.
 
