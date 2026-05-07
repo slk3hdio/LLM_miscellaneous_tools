@@ -1,0 +1,33 @@
+provider:
+  local:
+    model_path: ./models/qwen_2_5_1_5b
+    device: auto
+
+  openai:
+    base_url: https://api.deepseek.com/
+    model: deepseek-v4-flash
+    api_key: null
+
+  active: openai
+  max_new_token: 512
+  temperature: 0.0
+
+dataset:
+  apibank:
+    path: ./data/API-Bank
+    split: 
+      type: train # test/train
+      level: 2 # 1/2/3
+      subset: api # api/response
+
+  toolace:
+    path: ./data/ToolACE
+    split: all # smoke/all
+
+  active: apibank
+  limit: 5
+  conversation_style: multi # single/multi
+  with_raw_data: true
+  random_samples: true
+
+log_level: debug

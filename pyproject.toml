@@ -1,0 +1,48 @@
+[project]
+name = "paper"
+version = "0.1.0"
+description = "Model parameter visualization and tool-use evaluation utilities."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "accelerate>=1.13.0",
+    "huggingface-hub>=1.11.0",
+    "numpy>=2.4.3",
+    "openai>=2.32.0",
+    "plotly>=6.5.0",
+    "pyyaml>=6.0.0",
+    "pytest>=9.0.3",
+    "safetensors>=0.7.0",
+    "scikit-learn>=1.8.0",
+    "streamlit>=1.52.0",
+    "tensorboard>=2.20.0",
+    "torch>=2.11.0",
+    "torchinfo>=1.8.0",
+    "torchview>=0.2.7",
+    "tqdm>=4.66.0",
+    "transformers>=5.6.1",
+    "umap-learn>=0.5.12",
+]
+
+
+# "huggingface-hub>=1.11.0",
+# "numpy>=2.4.4",
+# "openai>=2.32.0",
+# "pytest>=8.4.2",
+# "tensorboard>=2.20.0",
+# "torch>=2.2.2",
+# "transformers>=5.6.1",
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu128" }
+torchvision = { index = "pytorch-cu128" }
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://mirrors.nju.edu.cn/pytorch/whl/cu128"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "integration: tests that talk to real external services or load real model weights",
+]
