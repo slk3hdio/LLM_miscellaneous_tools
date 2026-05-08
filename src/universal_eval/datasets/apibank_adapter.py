@@ -195,7 +195,7 @@ class APIBankDatasetAdapter(DatasetAdapter):
             sample_id=item['global_id'],
             context=conversation,
             target=target,
-            api_set=api_set,
+            api_set=api_set
         )
 
     @staticmethod

@@ -5,6 +5,7 @@ from typing import Any, Optional, Literal
 from openai import OpenAI
 from universal_eval.datasets import EvalSample
 from .model_provider import ModelProvider
+import logging
 
 
 class OpenAICompatibleProvider(ModelProvider):
@@ -22,6 +23,7 @@ class OpenAICompatibleProvider(ModelProvider):
 
         resolved_api_key = api_key or os.environ.get("OPENAI_API_KEY") or "EMPTY"
         self.client = OpenAI(api_key=resolved_api_key, base_url=base_url)
+        self.logger = logging.getLogger(__name__)
 
     def generate(
         self,
@@ -58,7 +60,10 @@ class OpenAICompatibleProvider(ModelProvider):
                         },
                     })
             return EvalSample.from_openai_tool_calls(raw_calls)
+        if tools and conversation_style == 'multi':
+            self.logger.warning(f"Did not receive tool calls when using standard tool format")
         if message.content:
+            self.logger.info(f"get fallback prediction: {message.content.strip()}")
             return message.content.strip()
         return ""
 

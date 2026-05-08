@@ -37,24 +37,15 @@ def evaluate_dataset(
     samples: List[EvalSample],
     conversation_style: Literal['single', 'multi'],
     use_standard_tool_format: bool = False,
-    output_dir: Optional[Path] = None,
+    # output_dir: Optional[Path] = None,
 ) -> Tuple[Dict[str, Any], List[EvalRecord]]:
     records: List[EvalRecord] = []
     correct = 0
-
-    if output_dir is not None:
-        output_dir.mkdir(parents=True, exist_ok=True)
 
     sample_iter = tqdm.tqdm(samples, desc="Evaluating") 
     for index, sample in enumerate(sample_iter, start=1):
         messages = sample.to_openai_messages(format_tools = use_standard_tool_format)
         tools = sample.to_openai_tools() or None
-        # if use_standard_tool_format:
-        #     messages = sample.to_openai_messages(use_standard_tool_format)
-        #     tools = sample.to_openai_tools() or None
-        # else:
-        #     messages = sample.context
-        #     tools = None
 
         prediction = provider.generate(messages, conversation_style=conversation_style, tools=tools)
         score = score_prediction(sample, prediction)
@@ -70,10 +61,4 @@ def evaluate_dataset(
         "exact_match_count": correct,
         "exact_match_rate": (correct / total) if total else 0.0,
     }
-
-    if output_dir is not None:
-        with (output_dir / "summary.json").open("w", encoding="utf-8") as fp:
-            json.dump(summary, fp, ensure_ascii=False, indent=2)
-        EvalRecord.save(records, output_dir / "predictions.jsonl")
-
     return summary, records

@@ -139,8 +139,7 @@ def run(config_path: Path | None = None) -> dict[str, Any]:
         provider,
         samples,
         conversation_style=conversation_style,
-        use_standard_tool_format=tool_format == "standard",
-        output_dir=output_dir,
+        use_standard_tool_format=tool_format == "standard"
     )
     logger.info(json.dumps({"summary": summary, "output_dir": str(output_dir)}, ensure_ascii=False, indent=2))
 

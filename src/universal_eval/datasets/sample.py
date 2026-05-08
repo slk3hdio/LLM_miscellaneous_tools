@@ -47,11 +47,11 @@ class EvalSample:
         tool_calls: NotRequired[List[Any]]
         tool_call_id: NotRequired[str]
         reasoning_content: NotRequired[Optional[str]]
-
     sample_id: str
+    api_set: List[Dict[str, Any]]
     context: List[Context]
     target: str
-    api_set: List[Dict[str, Any]]
+    prediction: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None
 
     # ------------------------------------------------------------------
@@ -150,8 +150,6 @@ class EvalSample:
             ]
             parts.append(f"{name}({', '.join(arg_parts)})")
         return "[" + ", ".join(parts) + "]"
-
-
 # ------------------------------------------------------------------
 # conversion helpers
 # ------------------------------------------------------------------
