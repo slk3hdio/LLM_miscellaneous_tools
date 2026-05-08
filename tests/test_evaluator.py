@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 
 from universal_eval.datasets import EvalSample
-from universal_eval.evaluator import evaluate_dataset
+from universal_eval.evaluator.evaluator import evaluate_dataset
 from universal_eval.providers import ModelProvider
 
 
@@ -77,3 +77,36 @@ def test_evaluate_dataset_handles_empty_samples(tmp_path):
         "exact_match_rate": 0.0,
     }
     assert records == []
+
+
+def test_evaluate_dataset_uses_standard_tool_format_when_enabled(tmp_path):
+    sample = EvalSample(
+        sample_id="tool",
+        context=[{"role": "user", "content": "call A"}],
+        target="[A()]",
+        api_set=[{"name": "A", "description": "demo", "parameters": {"type": "object", "properties": {}}}],
+    )
+    provider = DummyProvider(["[A()]"])
+
+    evaluate_dataset(
+        provider=provider,
+        samples=[sample],
+        use_standard_tool_format=True,
+        output_dir=tmp_path,
+    )
+
+    assert provider.calls == [
+        {
+            "messages": [{"role": "user", "content": "call A"}],
+            "tools": [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "A",
+                        "description": "demo",
+                        "parameters": {"type": "object", "properties": {}},
+                    },
+                }
+            ],
+        }
+    ]

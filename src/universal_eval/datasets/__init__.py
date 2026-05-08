@@ -1,14 +1,17 @@
+from typing import Dict, Any
 from .adapter import DatasetAdapter, EvalSample
-from .scoring import score_prediction
+from ..evaluator.scoring import score_prediction
 from .toolace_adapter import ToolACEDatasetAdapter
 from .apibank_adapter import APIBankDatasetAdapter
 
 
-def create_dataset_adapter(name: str) -> DatasetAdapter:
+def create_dataset_adapter(dataset_config:Dict[str, Any]) -> DatasetAdapter:
+    name = dataset_config['active']
+    active_config = dataset_config[name]
     if name == 'toolace':
-        return ToolACEDatasetAdapter()
+        return ToolACEDatasetAdapter(active_config['path'], active_config['split'])
     if name == 'apibank':
-        return APIBankDatasetAdapter()
+        return APIBankDatasetAdapter(active_config['path'], active_config['split'])
     raise ValueError(f"Unsupported dataset type: {name}")
 
 __all__ = [

@@ -4,11 +4,15 @@ import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
-import tqdm
 
-from .datasets import DatasetAdapter, EvalSample
-from .datasets.scoring import score_prediction
-from .providers import ModelProvider
+try:
+    import tqdm
+except ModuleNotFoundError:
+    tqdm = None
+
+from ..datasets.sample import EvalSample
+from .scoring import score_prediction
+from ..providers import ModelProvider
 
 
 @dataclass
@@ -35,17 +39,18 @@ class EvalRecord:
 def evaluate_dataset(
     provider: ModelProvider,
     samples: List[EvalSample],
+    use_standard_tool_format: bool = False,
     output_dir: Optional[Path] = None,
 ) -> Tuple[Dict[str, Any], List[EvalRecord]]:
     records: List[EvalRecord] = []
     correct = 0
-    use_tools = getattr(provider, "supports_tools", False)
 
     if output_dir is not None:
         output_dir.mkdir(parents=True, exist_ok=True)
 
-    for index, sample in enumerate(tqdm.tqdm(samples, desc="Evaluating"), start=1):
-        if use_tools:
+    sample_iter = tqdm.tqdm(samples, desc="Evaluating") if tqdm else samples
+    for index, sample in enumerate(sample_iter, start=1):
+        if use_standard_tool_format:
             messages = sample.to_openai_messages()
             tools = sample.to_openai_tools() or None
         else:

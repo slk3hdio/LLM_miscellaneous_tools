@@ -25,9 +25,11 @@ dataset:
     split: all # smoke/all
 
   active: apibank
-  limit: 5
-  conversation_style: multi # single/multi
   with_raw_data: true
   random_samples: true
 
 log_level: debug
+conversation_style: multi # single/multi 所有内容压缩在同一轮对话/多轮对话 note: 只有支持对话格式的模型可以使用multi格式
+tool_format: standard # standard/plain 分别对应openai标准格式, 纯文本格式(EvalSample中规定的格式)  note: 只有conversation_style为multi, 且模型支持工具调用格式时支持stantard格式
+sample_limit: 5 # 最多加载多少样本
+  

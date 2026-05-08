@@ -3,9 +3,13 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from typing import Any, Dict, List, Literal, Optional
-
+from ..evaluator.parser_tools import parse_call_string
 from typing import TypedDict
+from logging import getLogger
+from typing_extensions import NotRequired, Required
+import re
 
+logger = getLogger(__name__)
 
 @dataclass
 class EvalSample:
@@ -38,8 +42,11 @@ class EvalSample:
     """
 
     class Context(TypedDict):
-        role: Literal["user", "assistant", "system", "tool"]
-        content: str
+        role: Required[Literal["user", "assistant", "system", "tool"]]
+        content: Required[Optional[str]]
+        tool_calls: NotRequired[List[Any]]
+        tool_call_id: NotRequired[str]
+        reasoning_content: NotRequired[Optional[str]]
 
     sample_id: str
     context: List[Context]
@@ -51,9 +58,57 @@ class EvalSample:
     # OpenAI ChatCompletion helpers
     # ------------------------------------------------------------------
 
-    def to_openai_messages(self) -> list[dict[str, Any]]:
+    def to_openai_messages(self, format_tools: bool, save_to_meta = True) -> list["EvalSample.Context"]:
         """Convert context to OpenAI ChatCompletion format."""
-        return _convert_messages(self.context)
+        converted: list['EvalSample.Context'] = []
+        pending_call_ids: list[str] = []
+
+        for msg in self.context:
+            role = msg["role"]
+            content = msg["content"] or ""
+
+            if role in ("system", "user"):
+                converted.append({"role": role, "content": content})
+                pending_call_ids = []
+
+            elif role == "assistant":
+                if _is_tool_call(content) and format_tools:
+                    tool_calls = _build_tool_calls(content, offset=len(converted))
+                    converted.append({
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": tool_calls,
+                        "reasoning_content": None,
+                    })
+                    pending_call_ids = [tc["id"] for tc in tool_calls]
+                else:
+                    converted.append({
+                        "role": "assistant",
+                        "content": content,
+                        "reasoning_content": None,
+                    })
+                    pending_call_ids = []
+
+            elif role == "tool":
+                if pending_call_ids and _is_tool_result(content) and format_tools:
+                    tool_msgs = _build_tool_messages(content, pending_call_ids)
+                    converted.extend(tool_msgs)
+                else:
+                    logger.warning('')
+                    converted.append({
+                        'role': 'user',
+                        'content': f'Tool result: {content}'
+                    })
+                pending_call_ids = []
+
+        if save_to_meta:
+            if self.metadata:
+                self.metadata['openai_format'] = converted
+            else:
+                self.metadata = {'openai_format':converted}
+        # self.context = converted
+        return converted
+            
 
     def to_openai_tools(self) -> list[dict[str, Any]]:
         """Convert *already-normalised* api_set to OpenAI ``tools`` parameter.
@@ -101,12 +156,16 @@ class EvalSample:
 # conversion helpers
 # ------------------------------------------------------------------
 
-def _is_tool_call(content: str) -> bool:
+def _is_tool_call(content: str | None) -> bool:
+    if content is None:
+        return False
     return content.strip().startswith("[")
 
 
-def _is_tool_result(content: str) -> bool:
+def _is_tool_result(content: str|None) -> bool:
     """True when *content* is the standard ``[{"name": ..., "result": ...}]`` format."""
+    if content is None:
+        return False
     stripped = content.strip()
     if not stripped.startswith("["):
         return False
@@ -117,56 +176,54 @@ def _is_tool_result(content: str) -> bool:
         return False
 
 
-def _convert_messages(messages: list[EvalSample.Context]) -> list[dict[str, Any]]:
-    converted: list[dict[str, Any]] = []
-    pending_call_ids: list[str] = []
+# def _convert_messages(messages: list[EvalSample.Context]) -> list[dict[str, Any]]:
+#     converted: list[dict[str, Any]] = []
+#     pending_call_ids: list[str] = []
 
-    for msg in messages:
-        role = msg["role"]
-        content = msg["content"].strip()
+#     for msg in messages:
+#         role = msg["role"]
+#         content = msg["content"].strip()
 
-        if role in ("system", "user"):
-            converted.append({"role": role, "content": content})
-            pending_call_ids = []
+#         if role in ("system", "user"):
+#             converted.append({"role": role, "content": content})
+#             pending_call_ids = []
 
-        elif role == "assistant":
-            if _is_tool_call(content):
-                tool_calls = _build_tool_calls(content, offset=len(converted))
-                converted.append({
-                    "role": "assistant",
-                    "content": None,
-                    "tool_calls": tool_calls,
-                    "reasoning_content": None,
-                })
-                pending_call_ids = [tc["id"] for tc in tool_calls]
-            else:
-                converted.append({
-                    "role": "assistant",
-                    "content": content,
-                    "reasoning_content": None,
-                })
-                pending_call_ids = []
+#         elif role == "assistant":
+#             if _is_tool_call(content):
+#                 tool_calls = _build_tool_calls(content, offset=len(converted))
+#                 converted.append({
+#                     "role": "assistant",
+#                     "content": None,
+#                     "tool_calls": tool_calls,
+#                     "reasoning_content": None,
+#                 })
+#                 pending_call_ids = [tc["id"] for tc in tool_calls]
+#             else:
+#                 converted.append({
+#                     "role": "assistant",
+#                     "content": content,
+#                     "reasoning_content": None,
+#                 })
+#                 pending_call_ids = []
 
-        elif role == "tool":
-            if pending_call_ids and _is_tool_result(content):
-                tool_msgs = _build_tool_messages(content, pending_call_ids)
-                converted.extend(tool_msgs)
-            else:
-                fallback = f"Tool result: {content}"
-                if converted and converted[-1].get("role") == "assistant":
-                    existing = converted[-1].get("content") or ""
-                    converted[-1]["content"] = f"{existing}\n{fallback}".strip()
-                else:
-                    converted.append({"role": "user", "content": fallback})
-            pending_call_ids = []
+#         elif role == "tool":
+#             if pending_call_ids and _is_tool_result(content):
+#                 tool_msgs = _build_tool_messages(content, pending_call_ids)
+#                 converted.extend(tool_msgs)
+#             else:
+#                 fallback = f"Tool result: {content}"
+#                 if converted and converted[-1].get("role") == "assistant":
+#                     existing = converted[-1].get("content") or ""
+#                     converted[-1]["content"] = f"{existing}\n{fallback}".strip()
+#                 else:
+#                     converted.append({"role": "user", "content": fallback})
+#             pending_call_ids = []
 
-    return converted
+#     return converted
 
 
 def _build_tool_calls(content: str, offset: int = 0) -> list[dict[str, Any]]:
-    from .adapter import _parse_call_string
-
-    calls = _parse_call_string(content)
+    calls = parse_call_string(content)
     tool_calls: list[dict[str, Any]] = []
     for i, call in enumerate(calls):
         tool_calls.append({
@@ -180,14 +237,15 @@ def _build_tool_calls(content: str, offset: int = 0) -> list[dict[str, Any]]:
     return tool_calls
 
 
-def _build_tool_messages(content: str, call_ids: list[str]) -> list[dict[str, Any]]:
+def _build_tool_messages(content: str, call_ids: list[str]) -> list['EvalSample.Context']:
     results = json.loads(content)  # guaranteed valid by _is_tool_result
     items: list[Any] = results if isinstance(results, list) else [results]
 
     if not call_ids:
+        logger.warning('')
         return [{"role": "user", "content": f"Tool result: {json.dumps(results, ensure_ascii=False)}"}]
 
-    msgs: list[dict[str, Any]] = []
+    msgs:list['EvalSample.Context'] = []
     for i, result in enumerate(items):
         if i < len(call_ids):
             msgs.append({
@@ -195,7 +253,7 @@ def _build_tool_messages(content: str, call_ids: list[str]) -> list[dict[str, An
                 "tool_call_id": call_ids[i],
                 "content": json.dumps(result, ensure_ascii=False),
             })
-        elif msgs:
+        elif msgs and msgs[-1]["content"]:
             prev = json.loads(msgs[-1]["content"])
             merged = [prev, result] if not isinstance(prev, list) else prev + [result]
             msgs[-1]["content"] = json.dumps(merged, ensure_ascii=False)

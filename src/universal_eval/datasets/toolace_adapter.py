@@ -105,22 +105,20 @@ def _normalize_tool_result(content: str) -> str:
 class ToolACEDatasetAdapter(DatasetAdapter):
     name = "toolace"
 
-    def __init__(self):
+    def __init__(self, path, split):
+        super().__init__(path, split)
         self.logger = logging.getLogger(__name__)
 
     def load_samples(
         self,
-        dataset_config: dict[str, Any],
         limit: int | None = None,
         conversation_style: Literal['single', 'multi'] = 'single',
         with_raw_data: bool = False,
         random_samples: bool = False,
         strip_tool_descriptions: bool = False,
     ) -> List[EvalSample]:
-        dataset_path = Path(dataset_config['path'])
-        split = dataset_config.get('split', {})
-        file_name = 'data.json' if split == 'all' else 'data_smoke_20.json'
-        file_path = dataset_path / file_name
+        file_name = 'data.json' if self.split == 'all' else 'data_smoke_20.json'
+        file_path = self.path / file_name
         data = json.loads(file_path.read_text(encoding="utf-8"))
 
         if random_samples:
@@ -381,21 +379,21 @@ class ToolACEDatasetAdapter(DatasetAdapter):
         return context
 
 
-if __name__ == "__main__":
-    root = Path(__file__).resolve().parents[3]
-    adapter = ToolACEDatasetAdapter()
-    config = {
-        "path": str(root / "data" / "ToolACE"),
-        "split": {
-            "file": "data.json",
-        }
-    }
-    logging.basicConfig(
-        level=logging.INFO,
-        format='[%(asctime)s]%(name)s %(levelname)s: %(message)s'
-    )
-    samples = adapter.load_samples(config, conversation_style='multi', random_samples=False, limit=10)
-    with open("test.json", "w", encoding="utf-8") as f:
-        json.dump([asdict(sample) for sample in samples], f, ensure_ascii=False, indent=4)
+# if __name__ == "__main__":
+#     root = Path(__file__).resolve().parents[3]
+#     config = {
+#         "path": str(root / "data" / "ToolACE"),
+#         "split": {
+#             "file": "data.json",
+#         }
+#     }
+#     adapter = ToolACEDatasetAdapter(config)
+#     logging.basicConfig(
+#         level=logging.INFO,
+#         format='[%(asctime)s]%(name)s %(levelname)s: %(message)s'
+#     )
+#     samples = adapter.load_samples(conversation_style='multi', random_samples=False, limit=10)
+#     with open("test.json", "w", encoding="utf-8") as f:
+#         json.dump([asdict(sample) for sample in samples], f, ensure_ascii=False, indent=4)
 
         

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-import os
 from abc import ABC, abstractmethod
-from typing import Optional, Type, Dict, Any
+from typing import Any, Optional, Literal
+
+
+from universal_eval.datasets import EvalSample
 
 
 class ModelProvider(ABC):
@@ -21,7 +23,17 @@ class ModelProvider(ABC):
     @abstractmethod
     def generate(
         self,
-        messages: list[dict[str, str]],
+        messages: list[EvalSample.Context],
+        # conversation_style: Literal['single', 'multi'],
         tools: Optional[list[dict[str, Any]]] = None,
     ) -> str:
         raise NotImplementedError
+
+
+    def supports_conversation_format(self) -> bool:
+        """Return whether this provider can consume multi-message conversations."""
+        return False
+
+    def supports_tool_calling(self) -> bool:
+        """Return whether this provider supports the OpenAI tools/function-calling API."""
+        return False

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import os
-from typing import Any, Optional
-
+from typing import Any, Optional, Literal
+from openai import OpenAI
+from universal_eval.datasets import EvalSample
 from .model_provider import ModelProvider
 
 
@@ -18,18 +19,15 @@ class OpenAICompatibleProvider(ModelProvider):
         temperature: float = 0.0,
     ) -> None:
         super().__init__(model=model, max_new_tokens=max_new_tokens, temperature=temperature)
-        try:
-            from openai import OpenAI
-        except ImportError as exc:
-            raise ImportError("openai package is required for OpenAI/vLLM providers.") from exc
 
         resolved_api_key = api_key or os.environ.get("OPENAI_API_KEY") or "EMPTY"
         self.client = OpenAI(api_key=resolved_api_key, base_url=base_url)
 
     def generate(
         self,
-        messages: list[dict[str, str]],
-        tools: Optional[list[dict[str, Any]]] = None,
+        messages: list[EvalSample.Context],
+        # conversation_style: Literal['single', 'multi'],
+        tools: list[dict[str, Any]] | None = None,
     ) -> str:
         kwargs: dict[str, Any] = {
             "model": self.model,
@@ -44,8 +42,6 @@ class OpenAICompatibleProvider(ModelProvider):
         response = self.client.chat.completions.create(**kwargs)
         message = response.choices[0].message
         if message.tool_calls:
-            from ..datasets.sample import EvalSample
-
             raw_calls: list[dict[str, Any]] = []
             for tc in message.tool_calls:
                 if hasattr(tc, "model_dump"):
@@ -66,9 +62,15 @@ class OpenAICompatibleProvider(ModelProvider):
             return message.content.strip()
         return ""
 
-    @classmethod
-    def from_config(cls):
-        pass
+    def supports_conversation_format(self) -> bool:
+        return True
+
+    def supports_tool_calling(self) -> bool:
+        return True
+
+    # @classmethod
+    # def from_config(cls):
+    #     pass
 
 
 class VLLMProvider(OpenAICompatibleProvider):

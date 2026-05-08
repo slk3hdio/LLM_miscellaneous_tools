@@ -2,12 +2,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from .adapter import _parse_call_string
-from .sample import EvalSample
-
-
-def _normalize_text(text: str) -> str:
-    return " ".join(text.strip().split())
+from .parser_tools import parse_call_string, normalize_text
+from ..datasets.sample import EvalSample
 
 
 def _build_argument_entries(calls: List[Dict[str, Any]]) -> set[str]:
@@ -31,10 +27,10 @@ def score_prediction(sample: EvalSample, prediction: str) -> Dict[str, Any]:
     Both strings are parsed as ``[func(key="val"), ...]`` and compared on
     function names (exact) and arguments (IoU).
     """
-    normalized_prediction = _normalize_text(prediction)
-    normalized_target = _normalize_text(sample.target)
-    prediction_calls = _parse_call_string(prediction)
-    target_calls = _parse_call_string(sample.target)
+    normalized_prediction = normalize_text(prediction)
+    normalized_target = normalize_text(sample.target)
+    prediction_calls = parse_call_string(prediction)
+    target_calls = parse_call_string(sample.target)
 
     if target_calls:
         predicted_method_names = [call["name"] for call in prediction_calls]

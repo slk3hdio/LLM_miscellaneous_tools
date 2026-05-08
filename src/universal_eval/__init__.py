@@ -1,6 +1,6 @@
 from .datasets import EvalSample, create_dataset_adapter
 from .providers import create_provider
-from .evaluator import evaluate_dataset, EvalRecord
+from .evaluator.evaluator import evaluate_dataset, EvalRecord
 from .runner import run
 
 __all__ = [

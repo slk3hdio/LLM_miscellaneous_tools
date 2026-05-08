@@ -115,22 +115,22 @@ def _normalize_api_set(raw_apis: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 class APIBankDatasetAdapter(DatasetAdapter):
     name = "apibank"
 
-    def __init__(self):
+    def __init__(self, path, split):
+        super().__init__(path, split)
         self.logger = logging.getLogger(__name__)
 
     def load_samples(
         self,
-        dataset_config: dict[str, Any],
         limit: int | None = None,
         conversation_style: Literal['single', 'multi'] = 'single',
         with_raw_data: bool = False,
         random_samples: bool = False,
         strip_tool_descriptions: bool = False,
     ) -> List[EvalSample]:
-        dataset_path = Path(dataset_config['path'])
-        split = dataset_config['split']
+        # dataset_path = Path(dataset_config['path'])
+        # split = dataset_config['split']
 
-        file_path = self._resolve_file(dataset_path, split)
+        file_path = self._resolve_file(self.path, self.split)
         data = json.loads(file_path.read_text(encoding="utf-8"))
         # for index, item in enumerate(data):
         #     item['global_id'] = f"{file_path.name}_{index}"
@@ -143,7 +143,7 @@ class APIBankDatasetAdapter(DatasetAdapter):
         for index, item in enumerate(data):
             if limit is not None and index >= limit:
                 break
-            sample = self._parse_item(item, split['type'], conversation_style, strip_tool_descriptions)
+            sample = self._parse_item(item, self.split['type'], conversation_style, strip_tool_descriptions)
             if not sample:
                 continue
 
@@ -343,22 +343,22 @@ API-Request: [ApiName(key1='value1', key2='value2', ...)]
 #       level: 1 # 1/2/3
 #       subset: api # api/response
 
-if __name__ == "__main__":
-    root = Path(__file__).resolve().parents[3]
-    adapter = APIBankDatasetAdapter()
-    config = {
-        "path": str(root / "data" / "API-Bank"),
-        "split": {
-            "type": "train",
-            "level": 2,
-            "subset": "api",
-        }
-    }
-    logging.basicConfig(
-        level = logging.DEBUG,
-        format='[%(asctime)s]%(name)s %(levelname)s: %(message)s'
-    )
-    samples = adapter.load_samples(config, with_raw_data=True, conversation_style='single', random_samples=True)
-    with open("test.json", "w", encoding="utf-8") as f:
-        json.dump([asdict(sample) for sample in samples], f, ensure_ascii=False, indent=4)
+# if __name__ == "__main__":
+#     root = Path(__file__).resolve().parents[3]
+#     adapter = APIBankDatasetAdapter()
+#     config = {
+#         "path": str(root / "data" / "API-Bank"),
+#         "split": {
+#             "type": "train",
+#             "level": 2,
+#             "subset": "api",
+#         }
+#     }
+#     logging.basicConfig(
+#         level = logging.DEBUG,
+#         format='[%(asctime)s]%(name)s %(levelname)s: %(message)s'
+#     )
+#     samples = adapter.load_samples(config, with_raw_data=True, conversation_style='single', random_samples=True)
+#     with open("test.json", "w", encoding="utf-8") as f:
+#         json.dump([asdict(sample) for sample in samples], f, ensure_ascii=False, indent=4)
 
