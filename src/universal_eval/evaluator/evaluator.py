@@ -3,12 +3,8 @@ from __future__ import annotations
 import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
-
-try:
-    import tqdm
-except ModuleNotFoundError:
-    tqdm = None
+from typing import Any, Dict, List, Literal, Optional, Tuple
+import tqdm
 
 from ..datasets.sample import EvalSample
 from .scoring import score_prediction
@@ -39,6 +35,7 @@ class EvalRecord:
 def evaluate_dataset(
     provider: ModelProvider,
     samples: List[EvalSample],
+    conversation_style: Literal['single', 'multi'],
     use_standard_tool_format: bool = False,
     output_dir: Optional[Path] = None,
 ) -> Tuple[Dict[str, Any], List[EvalRecord]]:
@@ -48,16 +45,18 @@ def evaluate_dataset(
     if output_dir is not None:
         output_dir.mkdir(parents=True, exist_ok=True)
 
-    sample_iter = tqdm.tqdm(samples, desc="Evaluating") if tqdm else samples
+    sample_iter = tqdm.tqdm(samples, desc="Evaluating") 
     for index, sample in enumerate(sample_iter, start=1):
-        if use_standard_tool_format:
-            messages = sample.to_openai_messages()
-            tools = sample.to_openai_tools() or None
-        else:
-            messages = sample.context
-            tools = None
+        messages = sample.to_openai_messages(format_tools = use_standard_tool_format)
+        tools = sample.to_openai_tools() or None
+        # if use_standard_tool_format:
+        #     messages = sample.to_openai_messages(use_standard_tool_format)
+        #     tools = sample.to_openai_tools() or None
+        # else:
+        #     messages = sample.context
+        #     tools = None
 
-        prediction = provider.generate(messages, tools=tools)
+        prediction = provider.generate(messages, conversation_style=conversation_style, tools=tools)
         score = score_prediction(sample, prediction)
         exact_match = bool(score.get("exact_match"))
         correct += int(exact_match)

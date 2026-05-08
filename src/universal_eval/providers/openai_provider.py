@@ -26,7 +26,7 @@ class OpenAICompatibleProvider(ModelProvider):
     def generate(
         self,
         messages: list[EvalSample.Context],
-        # conversation_style: Literal['single', 'multi'],
+        conversation_style: Literal['single', 'multi'],
         tools: list[dict[str, Any]] | None = None,
     ) -> str:
         kwargs: dict[str, Any] = {

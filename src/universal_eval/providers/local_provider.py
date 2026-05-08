@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import re
 from typing import Any, Dict, Literal
 from pathlib import Path
 from universal_eval.datasets import EvalSample
@@ -15,12 +17,12 @@ def _load_model(model_path:str, device):
     model_ref = AutoModelForCausalLM.from_pretrained(model_path, device_map=device)
     return model_ref
 
-def _load_tokenizer(model_path:str, device):
+def _load_tokenizer(model_path:str):
     try:
         from transformers import AutoTokenizer
     except ImportError as exc:
         raise ImportError("transformers and torch are required for the local provider.") from exc
-    tokenizer = AutoTokenizer.from_pretrained(model_path, device_map=device, trust_remote_code=True)
+    tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
     return tokenizer
 class LocalTransformersProvider(ModelProvider):
     def __init__(
@@ -41,34 +43,99 @@ class LocalTransformersProvider(ModelProvider):
         self._supports_tool_calling = None
 
     def get_model(self):
-        if self._model_ref is None:
-            self._model_ref = _load_model(self.model_path, self.model_device)
-        self.model_device = self._model_ref
-        return self._model_ref
+        if self._model is None:
+            self._model = _load_model(self.model_path, self.model_device)
+        self.model_device = self._model.device
+        return self._model
     
     def get_tokenizer(self):
         if self._tokenizer is None:
-            self._tokenizer = _load_tokenizer(self.model_path, self.model_device)
+            self._tokenizer = _load_tokenizer(self.model_path)
+            if self._tokenizer.pad_token is None:
+                self._tokenizer.pad_token = self._tokenizer.eos_token
         return self._tokenizer
     
     def format_output(self, output:str)->str:
-        #TODO: parse response and tool call to plain text
-        return ""
+        text = output.strip()
+        if not text:
+            return ""
+
+        def _to_plain_tool_calls(raw_calls: Any) -> str:
+            items = raw_calls if isinstance(raw_calls, list) else [raw_calls]
+            tool_calls: list[dict[str, Any]] = []
+            for i, item in enumerate(items):
+                if not isinstance(item, dict):
+                    continue
+                function = item.get("function") if isinstance(item.get("function"), dict) else item
+                name = function.get("name")
+                if not name:
+                    continue
+                arguments = function.get("arguments", {})
+                if isinstance(arguments, str):
+                    try:
+                        arguments = json.loads(arguments)
+                    except json.JSONDecodeError:
+                        arguments = {}
+                elif not isinstance(arguments, dict):
+                    arguments = {}
+                tool_calls.append({
+                    "id": item.get("id", f"call_{i}"),
+                    "type": "function",
+                    "function": {
+                        "name": name,
+                        "arguments": json.dumps(arguments, ensure_ascii=False),
+                    },
+                })
+            return EvalSample.from_openai_tool_calls(tool_calls) if tool_calls else ""
+
+        match = re.search(r"<tool_call(?:s)?>\s*(.*?)\s*</tool_call(?:s)?>", text, flags=re.DOTALL)
+        if match:
+            payload = re.sub(r"^```(?:json)?\s*|\s*```$", "", match.group(1).strip(), flags=re.DOTALL)
+            try:
+                parsed = json.loads(payload)
+            except json.JSONDecodeError:
+                parsed = None
+            if parsed is not None:
+                plain_calls = _to_plain_tool_calls(parsed)
+                if plain_calls:
+                    return plain_calls
+
+        if text.startswith("{") or text.startswith("["):
+            try:
+                parsed = json.loads(text)
+            except json.JSONDecodeError:
+                parsed = None
+            if isinstance(parsed, dict):
+                plain_calls = _to_plain_tool_calls(parsed.get("tool_calls") or parsed.get("function") or parsed)
+                if plain_calls:
+                    return plain_calls
+                content = parsed.get("content")
+                if isinstance(content, str):
+                    return content.strip()
+            elif isinstance(parsed, list):
+                plain_calls = _to_plain_tool_calls(parsed)
+                if plain_calls:
+                    return plain_calls
+
+        return re.sub(r"</?s>|<\|[^>]+\|>", "", text).strip()
 
     def generate(
         self,
         messages: list[EvalSample.Context],
-        # conversation_style: Literal['single', 'multi'],
+        conversation_style: Literal['single', 'multi'],
         tools: list[dict[str, Any]] | None = None,
     ) -> str:
-        # rendered_prompt = self._render_prompt(messages, tools=tools)
-        rendered_prompt = self.get_tokenizer().apply_chat_complete(messages, tokenize=True, return_tensors='pt')
+        model = self.get_model()  # ensures model is loaded and self.model_device is set
 
-        encoded = self.get_tokenizer()(rendered_prompt, return_tensors="pt")
+        if conversation_style == 'multi':
+            encoded = self.get_tokenizer().apply_chat_template(messages, tokenize=True, return_tensors='pt', tools=tools, padding=True)
+        else:
+            text = "\n".join(msg.get("content", "") or "" for msg in messages)
+            encoded = self.get_tokenizer()(text, return_tensors="pt", padding=True)
         encoded = {k: v.to(self.model_device) for k, v in encoded.items()}
 
         do_sample = self.temperature > 0
-        outputs = self.get_model().generate( #type:ignore
+        outputs = model.generate( #type:ignore
             **encoded,
             max_new_tokens=self.max_new_tokens,
             temperature=max(self.temperature, 1e-5),
@@ -76,8 +143,11 @@ class LocalTransformersProvider(ModelProvider):
             pad_token_id=self.get_tokenizer().pad_token_id,
         )
         new_tokens = outputs[0][encoded["input_ids"].shape[1] :]
-        raw_output = self.get_tokenizer().decode(new_tokens, skip_special_tokens=False).strip()
-        return self.format_output(raw_output)
+        if conversation_style == 'single':
+            return self.get_tokenizer().decode(new_tokens, skip_special_tokens=True).strip()
+        else:
+            raw_output = self.get_tokenizer().decode(new_tokens, skip_special_tokens=False).strip()
+            return self.format_output(raw_output)
 
     def supports_conversation_format(self) -> bool:
         if self._supports_conversation_format is None:

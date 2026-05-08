@@ -39,8 +39,10 @@ def _build_output_dir(config: dict[str, Any]) -> Path:
     else:
         model_name = config["provider"]["openai"]["model"]
 
+    marker = f"{config['conversation_style']}_conv-{config['tool_format']}_tool-{config['sample_limit']}"
     ts = time.strftime("%Y%m%d_%H%M%S", time.localtime())
-    output_dir = ROOT / "outputs" / "evaluation" / model_name / config["dataset"]["active"] / ts
+    dir_name = marker + '-' + ts
+    output_dir = ROOT / "outputs" / "evaluation" / model_name / config["dataset"]["active"] / dir_name
     output_dir.mkdir(parents=True, exist_ok=True)
     output_dir.joinpath("config.yaml").write_text(
         yaml.dump(config, default_flow_style=False, allow_unicode=True),
@@ -136,6 +138,7 @@ def run(config_path: Path | None = None) -> dict[str, Any]:
     summary, records = evaluate_dataset(
         provider,
         samples,
+        conversation_style=conversation_style,
         use_standard_tool_format=tool_format == "standard",
         output_dir=output_dir,
     )

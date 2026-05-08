@@ -24,7 +24,7 @@ class ModelProvider(ABC):
     def generate(
         self,
         messages: list[EvalSample.Context],
-        # conversation_style: Literal['single', 'multi'],
+        conversation_style: Literal['single', 'multi'],
         tools: Optional[list[dict[str, Any]]] = None,
     ) -> str:
         raise NotImplementedError
