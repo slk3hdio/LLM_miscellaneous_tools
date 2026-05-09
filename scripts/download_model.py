@@ -21,6 +21,8 @@ def main() -> None:
 
     token = os.environ.get("HF_TOKEN")
     endpoint = os.environ.get("HF_ENDPOINT")
+    print(f"[INFO] HF_TOKEN: {token}")
+    print(f"[INFO] HF_ENDPOINT: {endpoint}")
 
     print(f"[INFO] Downloading {args.model_id} to {args.target_dir}")
     snapshot_download(
