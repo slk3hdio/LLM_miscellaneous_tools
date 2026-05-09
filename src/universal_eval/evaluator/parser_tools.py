@@ -10,8 +10,7 @@ def normalize_text(text: str) -> str:
     """规范化文本：合并连续空白字符为单个空格。"""
     return " ".join(text.strip().split())
 
-
-def _extract_call_block(text: str) -> Optional[str]:
+def extract_call_block(text: str) -> Optional[str]:
     """从文本中提取最外层的 ``[...]`` 工具调用块（跟踪括号深度）。"""
     start = text.find("[")
     if start < 0:
@@ -108,7 +107,7 @@ def _normalize_argument_value(value: str) -> str:
 
 def parse_call_string(text: str) -> List[Dict[str, Any]]:
     """将 ``[func(key="val"), ...]`` 格式的工具调用字符串解析为结构化字典列表。"""
-    block = _extract_call_block(text)
+    block = extract_call_block(text)
     if not block:
         return []
 

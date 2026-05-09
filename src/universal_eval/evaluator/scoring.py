@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from .parser_tools import parse_call_string, normalize_text
+from .parser_tools import parse_call_string, normalize_text, extract_call_block, format_call_string
 from ..datasets.sample import EvalSample
 
 
@@ -27,10 +27,12 @@ def score_prediction(sample: EvalSample, prediction: str) -> Dict[str, Any]:
     将预测与目标字符串均按 ``[func(key="val"), ...]`` 格式解析，
     比较函数名（精确匹配）和参数（IoU 交并比）。
     """
-    normalized_prediction = normalize_text(prediction)
-    normalized_target = normalize_text(sample.target)
+    # normalized_prediction = normalize_text(prediction)
+    # normalized_target = normalize_text(sample.target)
     prediction_calls = parse_call_string(prediction)
+    normalized_prediction = format_call_string(prediction_calls)
     target_calls = parse_call_string(sample.target)
+    normalized_target = format_call_string(target_calls)
 
     if target_calls:
         predicted_method_names = [call["name"] for call in prediction_calls]

@@ -66,14 +66,18 @@ class OpenAICompatibleProvider(ModelProvider):
 
         response = self.client.chat.completions.create(**kwargs)
         message = response.choices[0].message
+        # 处理 tool_calls
         if message.tool_calls:
             if conversation_style == 'single':
                 self.logger.warning(f"Received tool calls but conversation_style is single")
             return EvalSample.normalize_raw_tool_calls(_extract_raw_tool_calls(message.tool_calls))
-        if tools and conversation_style == 'multi':
+        # 没收到 tool_calls 的情况
+        if tools:
             self.logger.warning(f"Did not receive tool calls when using standard tool format")
+        # 尝试使用 content 作为 fallback
         if message.content:
-            self.logger.info(f"get fallback prediction: {message.content.strip()}")
+            if tools:
+                self.logger.info(f"get fallback prediction: {message.content.strip()}")
             return message.content.strip()
         return ""
 
@@ -94,10 +98,17 @@ class OpenAICompatibleProvider(ModelProvider):
 
         response = await self.async_client.chat.completions.create(**kwargs)
         message = response.choices[0].message
+        # 处理 tool_calls
         if message.tool_calls:
             raw_calls = _extract_raw_tool_calls(message.tool_calls)
             return EvalSample.normalize_raw_tool_calls(raw_calls)
+        # 没收到 tool_calls 的情况
+        if tools:
+            self.logger.warning(f"Did not receive tool calls when using standard tool format")
+        # 尝试使用 content 作为 fallback
         if message.content:
+            if tools:
+                self.logger.info(f"get fallback prediction: {message.content.strip()}")
             return message.content.strip()
         return ""
 

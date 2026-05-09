@@ -168,7 +168,7 @@ class LocalTransformersProvider(ModelProvider):
             pad_token_id=self.get_tokenizer().pad_token_id,
         )
         new_tokens = outputs[0][encoded["input_ids"].shape[1] :]
-        if conversation_style == 'single':
+        if tools is None:
             return self.get_tokenizer().decode(new_tokens, skip_special_tokens=True).strip()
         else:
             raw_output = self.get_tokenizer().decode(new_tokens, skip_special_tokens=False).strip()

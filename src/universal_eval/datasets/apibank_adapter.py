@@ -7,6 +7,8 @@ import json
 import logging
 import ast
 
+from ..evaluator.parser_tools import parse_call_string, format_call_string
+
 """
 api description:
 {
@@ -71,9 +73,7 @@ def _walk_and_fix(obj: Dict[str, Any]) -> Dict[str, Any]:
 
 def _normalize_answer_calls(target: str) -> str:
     """规范化目标答案中的工具调用字符串，确保格式一致便于评分比较。"""
-    from ..evaluator.parser_tools import parse_call_string, format_call_string
-
-    calls = parse_call_string(target)
+    calls = parse_call_string(target.strip())
     return format_call_string(calls) if calls else target
 
 
