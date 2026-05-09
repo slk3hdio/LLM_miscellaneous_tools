@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import re
 import time
 from pathlib import Path
 from typing import Any,Literal
@@ -18,7 +20,23 @@ CONVERSATION_STYLES = {"single", "multi"}
 TOOL_FORMATS = {"plain", "standard"}
 
 
-def _setup_logging(log_level: str) -> None:
+_ENV_VAR_RE = re.compile(r"\$\{([^}]+)\}")
+
+
+def _resolve_env_vars(obj: Any) -> Any:
+    """递归解析配置中的 ``${VAR_NAME}`` 环境变量占位符。"""
+    if isinstance(obj, str):
+        def _replace(m: re.Match[str]) -> str:
+            return os.environ.get(m.group(1), m.group(0))
+        return _ENV_VAR_RE.sub(_replace, obj)
+    if isinstance(obj, dict):
+        return {k: _resolve_env_vars(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_resolve_env_vars(v) for v in obj]
+    return obj
+
+
+def _setup_logging(log_level: str, output_dir: Path) -> None:
     logging.basicConfig(
         level={
             "debug": logging.DEBUG,
@@ -30,6 +48,12 @@ def _setup_logging(log_level: str) -> None:
     )
     for noisy in ("openai._base_client", "httpcore", "httpx"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
+    # 将日志也写入输出目录
+    file_handler = logging.FileHandler(
+        output_dir / "run.log", encoding="utf-8"
+    )
+    file_handler.setFormatter(logging.getLogger().handlers[0].formatter)
+    logging.getLogger().addHandler(file_handler)
 
 
 def _build_output_dir(config: dict[str, Any]) -> Path:
@@ -44,10 +68,10 @@ def _build_output_dir(config: dict[str, Any]) -> Path:
     dir_name = marker + '-' + ts
     output_dir = ROOT / "outputs" / "evaluation" / model_name / config["dataset"]["active"] / dir_name
     output_dir.mkdir(parents=True, exist_ok=True)
-    output_dir.joinpath("config.yaml").write_text(
-        yaml.dump(config, default_flow_style=False, allow_unicode=True),
-        encoding="utf-8",
-    )
+    # output_dir.joinpath("config.yaml").write_text(
+    #     yaml.dump(config, default_flow_style=False, allow_unicode=True),
+    #     encoding="utf-8",
+    # )
     return output_dir
 
 
@@ -107,20 +131,25 @@ def run(config_path: Path | None = None) -> dict[str, Any]:
         评测汇总字典，包含 total / exact_match_count / exact_match_rate。
     """
     path = config_path or DEFAULT_CONFIG
+    # --- config ---
     config = yaml.safe_load(path.read_text(encoding="utf-8"))
+    config = _resolve_env_vars(config)
 
-    _setup_logging(config["log_level"])
+    # --- output dir ---
+    output_dir = _build_output_dir(config)
+    _setup_logging(config["log_level"], output_dir)
     logger = logging.getLogger(__name__)
 
-    # --- process config ---
-    provider_cfg = config["provider"]
-    dataset_cfg = config["dataset"]
-
     # --- provider ---
-    provider = create_provider(provider_cfg)
+    provider = create_provider(config["provider"])
     conversation_style, tool_format = _resolve_runtime_options(config, provider, logger)
+    output_dir.joinpath("config.yaml").write_text(
+        yaml.dump(config, default_flow_style=False, allow_unicode=True),
+        encoding="utf-8",
+    )
 
     # --- dataset ---
+    dataset_cfg = config["dataset"]
     adapter = create_dataset_adapter(dataset_cfg)
     samples = adapter.load_samples(
         limit=dataset_cfg.get("limit", config.get("sample_limit")),
@@ -136,7 +165,6 @@ def run(config_path: Path | None = None) -> dict[str, Any]:
     logger.info("Loaded %d samples", len(samples))
 
     # --- evaluate ---
-    output_dir = _build_output_dir(config)
     summary, records = evaluate_dataset(
         provider,
         samples,
