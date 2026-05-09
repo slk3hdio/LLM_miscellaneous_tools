@@ -145,10 +145,6 @@ def run(config_path: Path | None = None) -> dict[str, Any]:
     logger.info(f"Loading provider {config['provider']['active']}...")
     provider = create_provider(config["provider"])
     conversation_style, tool_format = _resolve_runtime_options(config, provider, logger)
-    output_dir.joinpath("config.yaml").write_text(
-        yaml.dump(config, default_flow_style=False, allow_unicode=True),
-        encoding="utf-8",
-    )
 
     # --- dataset ---
     logger.info("="*50)
@@ -188,5 +184,12 @@ def run(config_path: Path | None = None) -> dict[str, Any]:
     summary_path = output_dir / "summary.json"
     summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
     logger.info("Summary saved to %s", summary_path)
+
+    if config.get('openai', {}).get('api_key', None):
+        config['openai']['api_key'] = "<hidden>"
+    output_dir.joinpath("config.yaml").write_text(
+        yaml.dump(config, default_flow_style=False, allow_unicode=True),
+        encoding="utf-8",
+    )
 
     return summary
