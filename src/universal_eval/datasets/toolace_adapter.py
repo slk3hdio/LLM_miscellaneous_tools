@@ -6,28 +6,23 @@ import json
 from dataclasses import asdict
 import logging
 import re
+from ..evaluator.parser_tools import sanitize_name
 
 
 def _sanitize_call_string(content: str) -> str:
-    """Sanitise function names inside a call string ``[func(args)]``."""
+    """净化工具调用字符串中的函数名，确保符合 OpenAI 命名规范。"""
     import re
     return re.sub(
         r'(\[|, )([a-zA-Z][a-zA-Z0-9 ._-]*?)\s*\(',
-        lambda m: m.group(1) + _sanitize_name(m.group(2)) + '(',
+        lambda m: m.group(1) + sanitize_name(m.group(2)) + '(',
         content,
     )
 
 
-def _sanitize_name(name: str) -> str:
-    """Replace non-alphanumeric characters with underscores for OpenAI compatibility."""
-    import re
-    return re.sub(r"[^a-zA-Z0-9_-]+", "_", name).strip("_")
-
-
 def _normalize_api_set(raw_apis: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Normalise ToolACE API definitions to standard format.
+    """将 ToolACE 原始 API 定义规范化为标准格式。
 
-    Standard format: ``{name, description, parameters: {type: "object", properties, required}}``
+    标准格式: ``{name, description, parameters: {type: "object", properties, required}}``
     """
     type_map = {"list": "array", "float": "number", "int": "integer", "bool": "boolean", "dict": "object"}
 
@@ -48,7 +43,7 @@ def _normalize_api_set(raw_apis: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
     normalized: List[Dict[str, Any]] = []
     for api in raw_apis:
-        name = _sanitize_name(api.get("name", api.get("tool_name", "")))
+        name = sanitize_name(api.get("name", api.get("tool_name", "")))
         desc = api.get("description", api.get("definition", ""))
         params = api.get("parameters", {})
 
@@ -86,7 +81,7 @@ def _normalize_api_set(raw_apis: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 
 def _normalize_tool_result(content: str) -> str:
-    """Normalise ToolACE tool-result key ``results`` → ``result``."""
+    """规范化 ToolACE 工具结果：将 ``results`` 键统一为 ``result``。"""
     try:
         parsed = json.loads(content)
     except json.JSONDecodeError:
@@ -103,6 +98,11 @@ def _normalize_tool_result(content: str) -> str:
 
 
 class ToolACEDatasetAdapter(DatasetAdapter):
+    """ToolACE 数据集适配器。
+
+    负责加载 ToolACE 的对话数据，支持多种系统提示格式的 API 定义提取
+    （JSON 数组、HTML 表格、XML 标签、Markdown 等）。
+    """
     name = "toolace"
 
     def __init__(self, path, split):

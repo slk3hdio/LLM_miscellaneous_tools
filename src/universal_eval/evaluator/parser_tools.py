@@ -7,10 +7,12 @@ import ast
 
 
 def normalize_text(text: str) -> str:
+    """规范化文本：合并连续空白字符为单个空格。"""
     return " ".join(text.strip().split())
 
 
 def _extract_call_block(text: str) -> Optional[str]:
+    """从文本中提取最外层的 ``[...]`` 工具调用块（跟踪括号深度）。"""
     start = text.find("[")
     if start < 0:
         return None
@@ -27,7 +29,8 @@ def _extract_call_block(text: str) -> Optional[str]:
     return None
 
 
-def _split_top_level_items(text: str) -> List[str]:
+def split_top_level_items(text: str) -> List[str]:
+    """按顶层逗号分割字符串，忽略括号、引号内的逗号。"""
     items: List[str] = []
     current: List[str] = []
     paren_depth = 0
@@ -83,6 +86,7 @@ def _split_top_level_items(text: str) -> List[str]:
 
 
 def _normalize_argument_value(value: str) -> str:
+    """规范化参数值：尝试 JSON/ast 解析，统一布尔、浮点、容器类型的输出。"""
     stripped = value.strip()
     # Try JSON first (handles true/false/null)
     try:
@@ -103,6 +107,7 @@ def _normalize_argument_value(value: str) -> str:
 
 
 def parse_call_string(text: str) -> List[Dict[str, Any]]:
+    """将 ``[func(key="val"), ...]`` 格式的工具调用字符串解析为结构化字典列表。"""
     block = _extract_call_block(text)
     if not block:
         return []
@@ -112,7 +117,7 @@ def parse_call_string(text: str) -> List[Dict[str, Any]]:
         return []
 
     calls: List[Dict[str, Any]] = []
-    for raw_call in _split_top_level_items(inner):
+    for raw_call in split_top_level_items(inner):
         match = re.match(r"^\s*(?P<name>[^()]+?)\s*\((?P<args>.*)\)\s*$", raw_call, re.DOTALL)
         if not match:
             continue
@@ -121,7 +126,7 @@ def parse_call_string(text: str) -> List[Dict[str, Any]]:
         arguments: Dict[str, str] = {}
         args_text = match.group("args").strip()
         if args_text:
-            for raw_argument in _split_top_level_items(args_text):
+            for raw_argument in split_top_level_items(args_text):
                 if "=" not in raw_argument:
                     continue
                 key, value = raw_argument.split("=", 1)
@@ -130,3 +135,23 @@ def parse_call_string(text: str) -> List[Dict[str, Any]]:
         calls.append({"name": method_name, "arguments": arguments})
 
     return calls
+
+
+def sanitize_name(name: str) -> str:
+    """净化函数名：将非字母数字字符替换为下划线，确保符合 OpenAI 命名规范 ``^[a-zA-Z0-9_-]+$``。"""
+    return re.sub(r"[^a-zA-Z0-9_-]+", "_", name).strip("_")
+
+
+def format_call_string(calls: List[Dict[str, Any]]) -> str:
+    """将结构化调用列表反序列化为 ``[func(key="val"), ...]`` 格式的标准字符串。
+
+    与 :func:`parse_call_string` 互为逆操作。
+    """
+    parts: list[str] = []
+    for call in calls:
+        arg_parts = [
+            f'{k}={json.dumps(v, ensure_ascii=False)}'
+            for k, v in call["arguments"].items()
+        ]
+        parts.append(f'{call["name"]}({", ".join(arg_parts)})')
+    return "[" + ", ".join(parts) + "]"

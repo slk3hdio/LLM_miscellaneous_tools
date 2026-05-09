@@ -25,6 +25,12 @@ def _load_tokenizer(model_path:str):
     tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
     return tokenizer
 class LocalTransformersProvider(ModelProvider):
+    """基于本地 HuggingFace Transformers 模型的推理提供器。
+
+    支持两种模式：
+    - single: 将所有消息拼接为一段文本输入
+    - multi:  使用 tokenizer.apply_chat_template 构建多轮对话格式
+    """
     def __init__(
         self,
         model: str,
@@ -56,37 +62,13 @@ class LocalTransformersProvider(ModelProvider):
         return self._tokenizer
     
     def format_output(self, output:str)->str:
+        """将本地模型的原始输出解析为标准工具调用格式。
+
+        按优先级尝试：``<tool_call>`` XML 标签 → 顶层 JSON → 纯文本回退。
+        """
         text = output.strip()
         if not text:
             return ""
-
-        def _to_plain_tool_calls(raw_calls: Any) -> str:
-            items = raw_calls if isinstance(raw_calls, list) else [raw_calls]
-            tool_calls: list[dict[str, Any]] = []
-            for i, item in enumerate(items):
-                if not isinstance(item, dict):
-                    continue
-                function = item.get("function") if isinstance(item.get("function"), dict) else item
-                name = function.get("name")
-                if not name:
-                    continue
-                arguments = function.get("arguments", {})
-                if isinstance(arguments, str):
-                    try:
-                        arguments = json.loads(arguments)
-                    except json.JSONDecodeError:
-                        arguments = {}
-                elif not isinstance(arguments, dict):
-                    arguments = {}
-                tool_calls.append({
-                    "id": item.get("id", f"call_{i}"),
-                    "type": "function",
-                    "function": {
-                        "name": name,
-                        "arguments": json.dumps(arguments, ensure_ascii=False),
-                    },
-                })
-            return EvalSample.from_openai_tool_calls(tool_calls) if tool_calls else ""
 
         match = re.search(r"<tool_call(?:s)?>\s*(.*?)\s*</tool_call(?:s)?>", text, flags=re.DOTALL)
         if match:
@@ -96,7 +78,7 @@ class LocalTransformersProvider(ModelProvider):
             except json.JSONDecodeError:
                 parsed = None
             if parsed is not None:
-                plain_calls = _to_plain_tool_calls(parsed)
+                plain_calls = EvalSample.normalize_raw_tool_calls(parsed)
                 if plain_calls:
                     return plain_calls
 
@@ -106,14 +88,14 @@ class LocalTransformersProvider(ModelProvider):
             except json.JSONDecodeError:
                 parsed = None
             if isinstance(parsed, dict):
-                plain_calls = _to_plain_tool_calls(parsed.get("tool_calls") or parsed.get("function") or parsed)
+                plain_calls = EvalSample.normalize_raw_tool_calls(parsed.get("tool_calls") or parsed.get("function") or parsed)
                 if plain_calls:
                     return plain_calls
                 content = parsed.get("content")
                 if isinstance(content, str):
                     return content.strip()
             elif isinstance(parsed, list):
-                plain_calls = _to_plain_tool_calls(parsed)
+                plain_calls = EvalSample.normalize_raw_tool_calls(parsed)
                 if plain_calls:
                     return plain_calls
 
@@ -125,6 +107,11 @@ class LocalTransformersProvider(ModelProvider):
         conversation_style: Literal['single', 'multi'],
         tools: list[dict[str, Any]] | None = None,
     ) -> str:
+        """使用本地 Transformers 模型生成回复。
+
+        single 模式将消息拼接为单段文本后直接 tokenize；
+        multi 模式通过 apply_chat_template 构建多轮对话输入。
+        """
         model = self.get_model()  # ensures model is loaded and self.model_device is set
 
         if conversation_style == 'multi':

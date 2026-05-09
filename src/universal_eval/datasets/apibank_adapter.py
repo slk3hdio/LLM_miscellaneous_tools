@@ -6,7 +6,6 @@ from typing import Optional, List, Dict, Any, Literal
 import json
 import logging
 import ast
-import re
 
 """
 api description:
@@ -62,7 +61,7 @@ api description:
 """
 
 def _walk_and_fix(obj: Dict[str, Any]) -> Dict[str, Any]:
-    """Recursively convert non-JSON-serializable Python objects (sets -> lists)."""
+    """递归转换非 JSON 可序列化的 Python 对象（如 set → list）。"""
     if isinstance(obj, dict):
         return {k: _walk_and_fix(v) for k, v in obj.items()}
     if isinstance(obj, (list, tuple, set, frozenset)):
@@ -70,124 +69,18 @@ def _walk_and_fix(obj: Dict[str, Any]) -> Dict[str, Any]:
     return obj
 
 
-def _split_top_level_items(text: str) -> List[str]:
-    items: List[str] = []
-    current: List[str] = []
-    paren_depth = 0
-    bracket_depth = 0
-    brace_depth = 0
-    quote_char: str | None = None
-    escape = False
-
-    for char in text:
-        if quote_char is not None:
-            current.append(char)
-            if escape:
-                escape = False
-            elif char == "\\":
-                escape = True
-            elif char == quote_char:
-                quote_char = None
-            continue
-
-        if char in {"'", '"'}:
-            quote_char = char
-            current.append(char)
-        elif char == "(":
-            paren_depth += 1
-            current.append(char)
-        elif char == ")":
-            paren_depth -= 1
-            current.append(char)
-        elif char == "[":
-            bracket_depth += 1
-            current.append(char)
-        elif char == "]":
-            bracket_depth -= 1
-            current.append(char)
-        elif char == "{":
-            brace_depth += 1
-            current.append(char)
-        elif char == "}":
-            brace_depth -= 1
-            current.append(char)
-        elif char == "," and paren_depth == 0 and bracket_depth == 0 and brace_depth == 0:
-            item = "".join(current).strip()
-            if item:
-                items.append(item)
-            current = []
-        else:
-            current.append(char)
-
-    tail = "".join(current).strip()
-    if tail:
-        items.append(tail)
-    return items
-
-
-def _format_answer_value(value: str) -> str:
-    stripped = value.strip()
-    try:
-        parsed = json.loads(stripped)
-    except (json.JSONDecodeError, TypeError):
-        try:
-            parsed = ast.literal_eval(stripped)
-        except Exception:
-            return json.dumps(stripped, ensure_ascii=False)
-
-    if isinstance(parsed, str):
-        return json.dumps(parsed, ensure_ascii=False)
-    if isinstance(parsed, bool):
-        return str(parsed).lower()
-    if isinstance(parsed, int):
-        return str(parsed)
-    if isinstance(parsed, float):
-        return str(int(parsed)) if parsed.is_integer() else str(parsed)
-    if isinstance(parsed, (dict, list, tuple)):
-        return json.dumps(parsed, ensure_ascii=False, sort_keys=True)
-    if parsed is None:
-        return "null"
-    return json.dumps(str(parsed), ensure_ascii=False)
-
-
 def _normalize_answer_calls(target: str) -> str:
-    text = target.strip()
-    if not text.startswith("[") or not text.endswith("]"):
-        return text
+    """规范化目标答案中的工具调用字符串，确保格式一致便于评分比较。"""
+    from ..evaluator.parser_tools import parse_call_string, format_call_string
 
-    inner = text[1:-1].strip()
-    if not inner:
-        return "[]"
-
-    normalized_calls: List[str] = []
-    for raw_call in _split_top_level_items(inner):
-        match = re.match(r"^\s*(?P<name>[^()]+?)\s*\((?P<args>.*)\)\s*$", raw_call, re.DOTALL)
-        if not match:
-            normalized_calls.append(raw_call.strip())
-            continue
-
-        method_name = match.group("name").strip()
-        args_text = match.group("args").strip()
-        if not args_text:
-            normalized_calls.append(f"{method_name}()")
-            continue
-
-        formatted_args: List[str] = []
-        for raw_argument in _split_top_level_items(args_text):
-            if "=" not in raw_argument:
-                formatted_args.append(raw_argument.strip())
-                continue
-            key, value = raw_argument.split("=", 1)
-            formatted_args.append(f"{key.strip()}={_format_answer_value(value)}")
-        normalized_calls.append(f"{method_name}({', '.join(formatted_args)})")
-
-    return "[" + ", ".join(normalized_calls) + "]"
+    calls = parse_call_string(target)
+    return format_call_string(calls) if calls else target
 
 
 def _normalize_api_set(raw_apis: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Normalise APIBank API definitions to standard format.
+    """将 APIBank 原始 API 定义规范化为标准格式。
 
-    Standard format: ``{name, description, parameters: {type: "object", properties, required}}``
+    标准格式: ``{name, description, parameters: {type: "object", properties, required}}``
     """
     type_map = {"list": "array", "float": "number", "int": "integer", "bool": "boolean", "str": "string"}
     normalized: List[Dict[str, Any]] = []
@@ -228,6 +121,11 @@ def _normalize_api_set(raw_apis: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 
 class APIBankDatasetAdapter(DatasetAdapter):
+    """API-Bank 数据集适配器。
+
+    负责加载 API-Bank 的对话数据，将其转换为统一的 :class:`EvalSample` 格式。
+    支持单轮（将所有历史压缩为一个 user 消息）和多轮两种对话风格。
+    """
     name = "apibank"
 
     def __init__(self, path, split):

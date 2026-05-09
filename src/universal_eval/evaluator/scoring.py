@@ -22,10 +22,10 @@ def _compute_iou(left: set[str], right: set[str]) -> Optional[float]:
 
 
 def score_prediction(sample: EvalSample, prediction: str) -> Dict[str, Any]:
-    """Score a *prediction* against *sample.target* using the standard call format.
+    """对模型预测进行评分。
 
-    Both strings are parsed as ``[func(key="val"), ...]`` and compared on
-    function names (exact) and arguments (IoU).
+    将预测与目标字符串均按 ``[func(key="val"), ...]`` 格式解析，
+    比较函数名（精确匹配）和参数（IoU 交并比）。
     """
     normalized_prediction = normalize_text(prediction)
     normalized_target = normalize_text(sample.target)

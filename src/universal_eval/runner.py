@@ -56,6 +56,7 @@ def _resolve_runtime_options(
     provider: Any,
     logger: logging.Logger,
 ) -> tuple[Literal['single', 'multi'], str]:
+    """根据 provider 能力解析并降级 conversation_style 和 tool_format。"""
     conversation_style = config.get("conversation_style", "single")
     tool_format = config.get("tool_format", "plain")
 
@@ -100,9 +101,10 @@ def _resolve_runtime_options(
 
 
 def run(config_path: Path | None = None) -> dict[str, Any]:
-    """Load config, prepare data, run evaluation, save results.
+    """主入口：加载配置 → 准备数据 → 运行评测 → 保存结果。
 
-    Returns the summary dict.
+    Returns:
+        评测汇总字典，包含 total / exact_match_count / exact_match_rate。
     """
     path = config_path or DEFAULT_CONFIG
     config = yaml.safe_load(path.read_text(encoding="utf-8"))

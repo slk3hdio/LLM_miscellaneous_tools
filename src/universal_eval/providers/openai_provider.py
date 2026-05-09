@@ -31,6 +31,7 @@ class OpenAICompatibleProvider(ModelProvider):
         conversation_style: Literal['single', 'multi'],
         tools: list[dict[str, Any]] | None = None,
     ) -> str:
+        """调用 OpenAI 兼容 API 生成回复。若有 tool_calls 则转为标准字符串格式返回。"""
         kwargs: dict[str, Any] = {
             "model": self.model,
             "messages": messages,
@@ -59,7 +60,7 @@ class OpenAICompatibleProvider(ModelProvider):
                             "arguments": getattr(tc.function, "arguments", "{}"),
                         },
                     })
-            return EvalSample.from_openai_tool_calls(raw_calls)
+            return EvalSample.normalize_raw_tool_calls(raw_calls)
         if tools and conversation_style == 'multi':
             self.logger.warning(f"Did not receive tool calls when using standard tool format")
         if message.content:
