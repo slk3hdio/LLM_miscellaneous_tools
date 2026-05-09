@@ -17,6 +17,34 @@ def _load_model(model_path:str, device):
     model_ref = AutoModelForCausalLM.from_pretrained(model_path, device_map=device)
     return model_ref
 
+def _ensure_tool_args_are_dicts(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """将消息中 tool_calls 的 JSON 字符串 arguments 转为 dict。
+
+    某些 tokenizer 的 chat_template（如 qwen 3.5）会遍历 arguments|items，
+    需要 arguments 是 dict 而非 JSON 字符串。
+    """
+    result: list[dict[str, Any]] = []
+    for m in messages:
+        tool_calls = m.get("tool_calls")
+        if not tool_calls:
+            result.append(m)
+            continue
+        fixed_calls: list[dict[str, Any]] = []
+        for tc in tool_calls:
+            tc = dict(tc)
+            func = dict(tc.get("function", {}))
+            args = func.get("arguments")
+            if isinstance(args, str):
+                try:
+                    func["arguments"] = json.loads(args)
+                except json.JSONDecodeError:
+                    pass
+            tc["function"] = func
+            fixed_calls.append(tc)
+        result.append({**m, "tool_calls": fixed_calls})
+    return result
+
+
 def _load_tokenizer(model_path:str):
     try:
         from transformers import AutoTokenizer
@@ -78,9 +106,27 @@ class LocalTransformersProvider(ModelProvider):
             except json.JSONDecodeError:
                 parsed = None
             if parsed is not None:
+                if isinstance(parsed, dict):
+                    parsed = [parsed]
                 plain_calls = EvalSample.normalize_raw_tool_calls(parsed)
                 if plain_calls:
                     return plain_calls
+
+        # 匹配 qwen 3.5 的 XML 参数格式: <function=Name><parameter=key>value</parameter></function>
+        func_blocks = re.findall(
+            r"<function=([^>]+)>\s*(.*?)</function>", text, flags=re.DOTALL
+        )
+        if func_blocks:
+            calls: list[dict[str, Any]] = []
+            for func_name, params_block in func_blocks:
+                args: dict[str, str] = {}
+                for pk, pv in re.findall(
+                    r"<parameter=([^>]+)>\s*(.*?)</parameter>", params_block, flags=re.DOTALL
+                ):
+                    args[pk.strip()] = pv.strip()
+                calls.append({"name": func_name.strip(), "arguments": args})
+            from ..evaluator.parser_tools import format_call_string
+            return format_call_string(calls)
 
         if text.startswith("{") or text.startswith("["):
             try:
@@ -115,7 +161,14 @@ class LocalTransformersProvider(ModelProvider):
         model = self.get_model()  # ensures model is loaded and self.model_device is set
 
         if conversation_style == 'multi':
-            encoded = self.get_tokenizer().apply_chat_template(messages, tokenize=True, return_tensors='pt', tools=tools, padding=True)
+            # qwen 3.5 模板会遍历 tool_calls.arguments|items，需要 dict 而非 JSON 字符串
+            msgs = _ensure_tool_args_are_dicts(messages)
+            try:
+                encoded = self.get_tokenizer().apply_chat_template(msgs, tokenize=True, return_tensors='pt', tools=tools, padding=True)
+            except TypeError:
+                self.logger.warning("apply_chat_template failed with structured tool_calls, falling back to plain mode")
+                text = "\n".join(msg.get("content", "") or "" for msg in messages)
+                encoded = self.get_tokenizer()(text, return_tensors="pt", padding=True)
         else:
             text = "\n".join(msg.get("content", "") or "" for msg in messages)
             encoded = self.get_tokenizer()(text, return_tensors="pt", padding=True)
@@ -173,7 +226,7 @@ class LocalTransformersProvider(ModelProvider):
             try:
                 prompt = self.get_tokenizer().apply_chat_template(
                     test_message,
-                    tools = test_tool,
+                    tools = [test_tool],
                     tokenize=False
                 )
                 self._supports_tool_calling = True

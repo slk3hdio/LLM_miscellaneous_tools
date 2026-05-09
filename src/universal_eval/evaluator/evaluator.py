@@ -59,10 +59,11 @@ def evaluate_dataset(
 
     sample_iter = tqdm.tqdm(samples, desc="Evaluating") 
     for index, sample in enumerate(sample_iter, start=1):
+        logger.debug(f"Processing sample {sample.sample_id}")
         messages = sample.to_openai_messages(format_tools = use_standard_tool_format)
         tools = sample.to_openai_tools() or None
         if tools is None and use_standard_tool_format:
-            logger.warning(f"Did not find tool set for sample {index} when using standard tool format")
+            logger.warning(f"Did not find tool set for sample {sample.sample_id} when using standard tool format")
 
         prediction = provider.generate(messages, conversation_style=conversation_style, tools=tools)
         score = score_prediction(sample, prediction)

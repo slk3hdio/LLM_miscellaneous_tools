@@ -154,6 +154,7 @@ class APIBankDatasetAdapter(DatasetAdapter):
 
         context_length = {}
         for index, item in enumerate(data):
+            self.logger.debug(f"Processing item {item['global_id']}")
             if limit is not None and index >= limit:
                 break
             sample = self._parse_item(item, self.split['type'], conversation_style, strip_tool_descriptions)

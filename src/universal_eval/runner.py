@@ -65,7 +65,7 @@ def _build_output_dir(config: dict[str, Any]) -> Path:
 
     marker = f"{config['conversation_style']}_conv-{config['tool_format']}_tool-{config['sample_limit']}"
     ts = time.strftime("%Y%m%d_%H%M%S", time.localtime())
-    dir_name = marker + '-' + ts
+    dir_name = ts + '-' + marker
     output_dir = ROOT / "outputs" / "evaluation" / model_name / config["dataset"]["active"] / dir_name
     output_dir.mkdir(parents=True, exist_ok=True)
     # output_dir.joinpath("config.yaml").write_text(
@@ -141,6 +141,8 @@ def run(config_path: Path | None = None) -> dict[str, Any]:
     logger = logging.getLogger(__name__)
 
     # --- provider ---
+    logger.info("="*50)
+    logger.info(f"Loading provider {config['provider']['active']}...")
     provider = create_provider(config["provider"])
     conversation_style, tool_format = _resolve_runtime_options(config, provider, logger)
     output_dir.joinpath("config.yaml").write_text(
@@ -149,6 +151,8 @@ def run(config_path: Path | None = None) -> dict[str, Any]:
     )
 
     # --- dataset ---
+    logger.info("="*50)
+    logger.info("Loading samples...")
     dataset_cfg = config["dataset"]
     adapter = create_dataset_adapter(dataset_cfg)
     samples = adapter.load_samples(
@@ -165,6 +169,8 @@ def run(config_path: Path | None = None) -> dict[str, Any]:
     logger.info("Loaded %d samples", len(samples))
 
     # --- evaluate ---
+    logger.info("="*50)
+    logger.info("Evaluating...")
     summary, records = evaluate_dataset(
         provider,
         samples,
@@ -174,6 +180,8 @@ def run(config_path: Path | None = None) -> dict[str, Any]:
     logger.info(json.dumps({"summary": summary, "output_dir": str(output_dir)}, ensure_ascii=False, indent=2))
 
     # --- save records ---
+    logger.info("="*50)
+    logger.info("Saving records...")
     records_path = output_dir / "records.jsonl"
     EvalRecord.save(records, records_path)
     logger.info("Records saved to %s", records_path)

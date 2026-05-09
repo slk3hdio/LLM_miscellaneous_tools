@@ -97,7 +97,10 @@ class EvalSample:
                     tool_msgs = _build_tool_messages(content, pending_call_ids)
                     converted.extend(tool_msgs)
                 else:
-                    logger.warning('')
+                    if format_tools:
+                        logger.warning("Tool result doesn't match expected format in standard mode: %s", content[:120])
+                    else:
+                        logger.debug("Tool result in plain mode (expected): %s", content[:80])
                     converted.append({
                         'role': 'user',
                         'content': f'Tool result: {content}'
@@ -222,7 +225,7 @@ def _build_tool_messages(content: str, call_ids: list[str]) -> list['EvalSample.
     items: list[Any] = results if isinstance(results, list) else [results]
 
     if not call_ids:
-        logger.warning('')
+        logger.warning("No tool call IDs provided for tool results.")
         return [{"role": "user", "content": f"Tool result: {json.dumps(results, ensure_ascii=False)}"}]
 
     msgs:list['EvalSample.Context'] = []
