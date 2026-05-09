@@ -46,33 +46,47 @@ def evaluate_dataset(
     samples: List[EvalSample],
     conversation_style: Literal['single', 'multi'],
     use_standard_tool_format: bool = False,
+    batch_size: int = 1,
     # output_dir: Optional[Path] = None,
 ) -> Tuple[Dict[str, Any], List[EvalRecord]]:
-    """对数据集逐样本进行评测。
+    """对数据集逐批评测。
 
-    每个样本经过：上下文转换 → 模型生成 → 评分 → 记录。
+    每个样本经过：上下文转换 → 批量模型生成 → 评分 → 记录。
     返回汇总指标和全部记录列表。
     """
     records: List[EvalRecord] = []
     correct = 0
     name_correct = 0
 
-    sample_iter = tqdm.tqdm(samples, desc="Evaluating") 
-    for index, sample in enumerate(sample_iter, start=1):
-        logger.debug(f"Processing sample {sample.sample_id}")
-        messages = sample.to_openai_messages(format_tools = use_standard_tool_format)
-        tools = sample.to_openai_tools() or None
-        if tools is None and use_standard_tool_format:
-            logger.warning(f"Did not find tool set for sample {sample.sample_id} when using standard tool format")
+    total_batches = (len(samples) + batch_size - 1) // batch_size
+    batch_iter = tqdm.tqdm(range(0, len(samples), batch_size), desc="Evaluating", total=total_batches)
+    for i in batch_iter:
+        batch = samples[i:i + batch_size]
 
-        prediction = provider.generate(messages, conversation_style=conversation_style, tools=tools)
-        score = score_prediction(sample, prediction)
-        exact_match = bool(score.get("exact_match"))
-        correct += int(exact_match)
-        name_correct += int(score.get("method_name_match", False))
+        # 准备 batch 输入
+        batch_messages: list[list[EvalSample.Context]] = []
+        batch_tools: list[list[dict[str, Any]] | None] = []
+        for sample in batch:
+            batch_messages.append(sample.to_openai_messages(format_tools=use_standard_tool_format))
+            if use_standard_tool_format:
+                tools = sample.to_openai_tools() or None
+                if tools is None:
+                    logger.warning("Did not find tool set for sample %s when using standard tool format", sample.sample_id)
+            else:
+                tools = None
+            batch_tools.append(tools)
 
-        record = EvalRecord(sample=sample, prediction=prediction, score=score)
-        records.append(record)
+        # 批量生成
+        predictions = provider.generate_batch(batch_messages, conversation_style, batch_tools)
+
+        # 逐条评分
+        for sample, prediction in zip(batch, predictions):
+            sample.prediction = prediction
+            score = score_prediction(sample, prediction)
+            exact_match = bool(score.get("exact_match"))
+            correct += int(exact_match)
+            name_correct += int(score.get("method_name_match", False))
+            records.append(EvalRecord(sample=sample, prediction=prediction, score=score))
 
     total = len(samples)
     summary = {

@@ -37,6 +37,21 @@ class ModelProvider(ABC):
         raise NotImplementedError
 
 
+    def generate_batch(
+        self,
+        batch_messages: list[list[EvalSample.Context]],
+        conversation_style: Literal['single', 'multi'],
+        batch_tools: list[list[dict[str, Any]] | None],
+    ) -> list[str]:
+        """批量生成回复。
+
+        默认实现逐条调用 :meth:`generate`。子类可覆盖以提供更高效的批量实现。
+        """
+        return [
+            self.generate(msgs, conversation_style, tools)
+            for msgs, tools in zip(batch_messages, batch_tools)
+        ]
+
     def supports_conversation_format(self) -> bool:
         """是否支持多轮对话格式（多消息序列而非单段文本）。"""
         return False

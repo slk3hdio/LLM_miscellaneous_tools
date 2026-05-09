@@ -171,7 +171,8 @@ def run(config_path: Path | None = None) -> dict[str, Any]:
         provider,
         samples,
         conversation_style=conversation_style,
-        use_standard_tool_format=tool_format == "standard"
+        use_standard_tool_format=tool_format == "standard",
+        batch_size=config.get("batch_size", 1),
     )
     logger.info(json.dumps({"summary": summary, "output_dir": str(output_dir)}, ensure_ascii=False, indent=2))
 

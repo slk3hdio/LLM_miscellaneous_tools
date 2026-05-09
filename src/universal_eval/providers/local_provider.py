@@ -87,6 +87,7 @@ class LocalTransformersProvider(ModelProvider):
             self._tokenizer = _load_tokenizer(self.model_path)
             if self._tokenizer.pad_token is None:
                 self._tokenizer.pad_token = self._tokenizer.eos_token
+            self._tokenizer.padding_side = "left"
         return self._tokenizer
     
     def format_output(self, output:str)->str:
@@ -153,29 +154,13 @@ class LocalTransformersProvider(ModelProvider):
         conversation_style: Literal['single', 'multi'],
         tools: list[dict[str, Any]] | None = None,
     ) -> str:
-        """使用本地 Transformers 模型生成回复。
-
-        single 模式将消息拼接为单段文本后直接 tokenize；
-        multi 模式通过 apply_chat_template 构建多轮对话输入。
-        """
-        model = self.get_model()  # ensures model is loaded and self.model_device is set
-
-        if conversation_style == 'multi':
-            # qwen 3.5 模板会遍历 tool_calls.arguments|items，需要 dict 而非 JSON 字符串
-            msgs = _ensure_tool_args_are_dicts(messages)
-            try:
-                encoded = self.get_tokenizer().apply_chat_template(msgs, tokenize=True, return_tensors='pt', tools=tools, padding=True)
-            except TypeError:
-                self.logger.warning("apply_chat_template failed with structured tool_calls, falling back to plain mode")
-                text = "\n".join(msg.get("content", "") or "" for msg in messages)
-                encoded = self.get_tokenizer()(text, return_tensors="pt", padding=True)
-        else:
-            text = "\n".join(msg.get("content", "") or "" for msg in messages)
-            encoded = self.get_tokenizer()(text, return_tensors="pt", padding=True)
+        """使用本地 Transformers 模型生成回复。"""
+        model = self.get_model()
+        encoded = self._encode(messages, conversation_style, tools)
         encoded = {k: v.to(self.model_device) for k, v in encoded.items()}
 
         do_sample = self.temperature > 0
-        outputs = model.generate( #type:ignore
+        outputs = model.generate(  # type: ignore
             **encoded,
             max_new_tokens=self.max_new_tokens,
             temperature=max(self.temperature, 1e-5),
@@ -188,6 +173,78 @@ class LocalTransformersProvider(ModelProvider):
         else:
             raw_output = self.get_tokenizer().decode(new_tokens, skip_special_tokens=False).strip()
             return self.format_output(raw_output)
+
+    def generate_batch(
+        self,
+        batch_messages: list[list[EvalSample.Context]],
+        conversation_style: Literal['single', 'multi'],
+        batch_tools: list[list[dict[str, Any]] | None],
+    ) -> list[str]:
+        """批量生成：将所有样本编码为一个 batch，一次 forward pass 处理。"""
+        import torch
+
+        model = self.get_model()
+        tokenizer = self.get_tokenizer()
+        batch_encoded: list[dict[str, torch.Tensor]] = []
+
+        for messages, tools in zip(batch_messages, batch_tools):
+            encoded = self._encode(messages, conversation_style, tools)
+            batch_encoded.append(encoded)
+
+        # Pad and stack into a single batch
+        input_ids_list = [e["input_ids"][0] for e in batch_encoded]
+        attention_list = [e["attention_mask"][0] for e in batch_encoded]
+        padded = tokenizer.pad(
+            {"input_ids": input_ids_list, "attention_mask": attention_list},
+            return_tensors="pt",
+            padding=True,
+        )
+        padded = {k: v.to(self.model_device) for k, v in padded.items()}
+
+        do_sample = self.temperature > 0
+        outputs = model.generate(  # type: ignore
+            **padded,
+            max_new_tokens=self.max_new_tokens,
+            temperature=max(self.temperature, 1e-5),
+            do_sample=do_sample,
+            pad_token_id=tokenizer.pad_token_id,
+        )
+
+        predictions: list[str] = []
+        for i, encoded in enumerate(batch_encoded):
+            input_len = encoded["input_ids"].shape[1]
+            new_tokens = outputs[i][input_len:]
+            if conversation_style == 'single':
+                pred = tokenizer.decode(new_tokens, skip_special_tokens=True).strip()
+            else:
+                raw_output = tokenizer.decode(new_tokens, skip_special_tokens=False).strip()
+                pred = self.format_output(raw_output)
+            predictions.append(pred)
+
+        return predictions
+
+    def _encode(
+        self,
+        messages: list[EvalSample.Context],
+        conversation_style: Literal['single', 'multi'],
+        tools: list[dict[str, Any]] | None,
+    ) -> dict[str, Any]:
+        """将消息编码为 input_ids + attention_mask，供 generate 和 generate_batch 共用。"""
+        import torch
+
+        if conversation_style == 'multi':
+            msgs = _ensure_tool_args_are_dicts(messages)
+            try:
+                return self.get_tokenizer().apply_chat_template(
+                    msgs, tokenize=True, return_tensors='pt', tools=tools, padding=True,
+                )
+            except TypeError:
+                self.logger.warning("apply_chat_template failed, falling back to plain mode")
+                text = "\n".join(msg.get("content", "") or "" for msg in messages)
+                return self.get_tokenizer()(text, return_tensors="pt", padding=True)
+        else:
+            text = "\n".join(msg.get("content", "") or "" for msg in messages)
+            return self.get_tokenizer()(text, return_tensors="pt", padding=True)
 
     def supports_conversation_format(self) -> bool:
         if self._supports_conversation_format is None:
