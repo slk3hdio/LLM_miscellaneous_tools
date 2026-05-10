@@ -17,33 +17,6 @@ def _load_model(model_path:str, device):
     model_ref = AutoModelForCausalLM.from_pretrained(model_path, device_map=device)
     return model_ref
 
-# def _ensure_tool_args_are_dicts(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-#     """将消息中 tool_calls 的 JSON 字符串 arguments 转为 dict。
-
-#     某些 tokenizer 的 chat_template（如 qwen 3.5）会遍历 arguments|items，
-#     需要 arguments 是 dict 而非 JSON 字符串。
-#     """
-#     result: list[dict[str, Any]] = []
-#     for m in messages:
-#         tool_calls = m.get("tool_calls")
-#         if not tool_calls:
-#             result.append(m)
-#             continue
-#         fixed_calls: list[dict[str, Any]] = []
-#         for tc in tool_calls:
-#             tc = dict(tc)
-#             func = dict(tc.get("function", {}))
-#             args = func.get("arguments")
-#             if isinstance(args, str):
-#                 try:
-#                     func["arguments"] = json.loads(args)
-#                 except json.JSONDecodeError:
-#                     pass
-#             tc["function"] = func
-#             fixed_calls.append(tc)
-#         result.append({**m, "tool_calls": fixed_calls})
-#     return result
-
 
 def _load_tokenizer(model_path:str):
     try:
@@ -191,15 +164,13 @@ class LocalTransformersProvider(ModelProvider):
 
         model = self.get_model()
         tokenizer = self.get_tokenizer()
-        # batch_encoded: list[dict[str, torch.Tensor]] = []
 
-
-
-        # for messages, tools in zip[tuple[list[Context], list[dict[str, Any]] | None]](batch_messages, batch_tools):
-        #     encoded = self._encode(messages, conversation_style, tools)
-        #     batch_encoded.append(encoded)
         if conversation_style == 'multi':
-            batch_inputs = tokenizer.apply_chat_template(batch_messages, tokenize=True, return_tensors='pt', tools=batch_tools, padding=True, padding_side='left')
+            prompts = []
+            for messages, tools in zip(batch_messages, batch_tools):
+                prompt = tokenizer.apply_chat_template(messages, tokenize=False, return_tensors='pt', tools=tools, add_special_tokens=False)
+                prompts.append(prompt)
+            batch_inputs = tokenizer(prompts, return_tensors="pt", padding_side='left', padding=True)
         else:
             prompts = [message[0]['content'] for message in batch_messages]
             batch_inputs = tokenizer(prompts, return_tensors="pt", padding_side='left', padding=True)
@@ -237,31 +208,6 @@ class LocalTransformersProvider(ModelProvider):
             predictions.append(pred)
 
         return predictions
-
-    # def _encode(
-    #     self,
-    #     messages: list[EvalSample.Context],
-    #     conversation_style: Literal['single', 'multi'],
-    #     tools: list[dict[str, Any]] | None,
-    # ) -> dict[str, Any]:
-    #     """将消息编码为 input_ids + attention_mask，供 generate 和 generate_batch 共用。"""
-    #     import torch
-
-    #     if conversation_style == 'multi':
-    #         msgs = _ensure_tool_args_are_dicts(messages)
-    #         try:
-    #             return self.get_tokenizer().apply_chat_template(
-    #                 msgs, tokenize=True, return_tensors='pt', tools=tools, padding=True,
-    #             )
-    #         except TypeError:
-    #             self.logger.warning("apply_chat_template failed, falling back to plain mode")
-    #             text = "\n".join(msg.get("content", "") or "" for msg in messages)
-    #             return self.get_tokenizer()(text, return_tensors="pt", padding=True)
-    #     else:
-    #         if len(messages) != 1:
-    #             self.logger.warning(f'local_provider only supports single message conversation_style, got {len(messages)}')
-    #         text = messages[0]['content']
-    #         return self.get_tokenizer()(text, return_tensors="pt", padding=True)
 
     def supports_conversation_format(self) -> bool:
         if self._supports_conversation_format is None:
