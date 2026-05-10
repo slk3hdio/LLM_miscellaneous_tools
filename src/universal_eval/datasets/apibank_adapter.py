@@ -323,7 +323,7 @@ class APIBankDatasetAdapter(DatasetAdapter):
         return _walk_and_fix(obj)
 
     def _extract_single_round_conversation(self, item: Dict[str, Any]) -> List[EvalSample.Context]:
-        prompt = item['instruction'] + item['input']
+        prompt = item['instruction'] + "\nWhen generating output, don't think, just output response or API request.\n" + item['input']
         return [{"role": "user", "content": prompt}]
 
     def _get_current_time(self, s:str):
@@ -340,6 +340,7 @@ class APIBankDatasetAdapter(DatasetAdapter):
         if strip_tools:
             return f"""
 You are a helpful assistant. Use the provided function tools to answer the user's request.
+Output directly, don't think.
 {f'the current year is {curr_year}' if curr_year else ''}
 {f'the current time is {curr_time}' if curr_time else ''}
             """
@@ -348,6 +349,7 @@ You are a helpful assistant, you can use the following APIs when needed:
 {','.join(api_lines)}
 When using APIs, the expected output is:
 API-Request: [ApiName(key1='value1', key2='value2', ...)]
+Output directly, don't think.
 {f'the current year is {curr_year}' if curr_year else ''}
 {f'the current time is {curr_time}' if curr_time else ''}
             """
