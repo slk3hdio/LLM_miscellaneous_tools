@@ -197,7 +197,7 @@ class LocalTransformersProvider(ModelProvider):
         )
 
         predictions: list[str] = []
-        for i in range(len(batch_inputs)):
+        for i in range(len(batch_inputs["input_ids"])):
             input_len = int(batch_inputs["input_ids"][i].shape[0])
             new_tokens = batch_outputs[i][input_len:]
             if conversation_style == 'single':
