@@ -27,9 +27,20 @@ class EvalRecord:
     @classmethod
     def save(cls, records: List[EvalRecord], file_path: Path) -> None:
         """将评测记录保存为 JSONL 文件。"""
+        import os as _os
+        logger.debug("Saving %d records to %s", len(records), file_path)
         with file_path.open("w", encoding="utf-8") as fp:
-            for record in records:
+            for idx, record in enumerate(records):
                 fp.write(json.dumps(asdict(record), ensure_ascii=False) + "\n")
+            fp.flush()
+            _os.fsync(fp.fileno())
+        actual = sum(1 for _ in file_path.open("r", encoding="utf-8"))
+        logger.debug("Wrote %d records, verified %d lines on disk", len(records), actual)
+        if actual != len(records):
+            logger.error(
+                "MISMATCH: expected %d records but only %d written to %s",
+                len(records), actual, file_path,
+            )
 
     @classmethod
     def load(cls, file_path: Path) -> List[EvalRecord]:
