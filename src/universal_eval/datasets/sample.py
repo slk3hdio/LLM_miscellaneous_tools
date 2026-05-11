@@ -81,14 +81,12 @@ class EvalSample:
                         "role": "assistant",
                         "content": None,
                         "tool_calls": tool_calls,
-                        "reasoning_content": None,
                     })
                     pending_call_ids = [tc["id"] for tc in tool_calls]
                 else:
                     converted.append({
                         "role": "assistant",
                         "content": content,
-                        "reasoning_content": None,
                     })
                     pending_call_ids = []
 
