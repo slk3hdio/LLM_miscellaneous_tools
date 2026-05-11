@@ -211,7 +211,7 @@ def _build_tool_calls(content: str, offset: int = 0) -> list[dict[str, Any]]:
             "type": "function",
             "function": {
                 "name": call["name"],
-                "arguments": call["arguments"],
+                "arguments": json.dumps(call["arguments"], ensure_ascii=False),
             },
         })
     return tool_calls
